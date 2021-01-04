@@ -2,16 +2,17 @@ const express = require("express");
 const router = express.Router();
 const database = require("./helpers/database");
 const floodChecker = require("./validation/antipollspam");
+const {requiresAuthentication} = require("./validation/basicauth");
 
 //Index page to have an overview of active polls (and be able to manage them perhaps) - might need some password protection
-router.get("/", async (req, res) => {
+router.get("/", requiresAuthentication, async (req, res) => {
   res.render("index", {
     polls: await database.find({}).sort({ timestamp: -1 }),
   });
 });
 
 //Page to create a new poll
-router.get("/create", function (req, res) {
+router.get("/create", requiresAuthentication, function (req, res) {
   res.render("create");
 });
 
@@ -44,9 +45,12 @@ router.get("/poll/:pollId", async function (req, res) {
 //Page to add a vote to a poll
 router.get("/vote/:pollId", async function (req, res) {
   const _id = req.params.pollId;
-  const floodCheckId = _id + "_" + req.ip;
 
+  const floodCheckId = _id + "_" + req.ip;
   const hasVoted = !floodChecker.check(floodCheckId);
+
+  // uncomment this to disable this check
+  // const hasVoted = false
 
   //Forward user to poll results page if already voted
   if (hasVoted) {
@@ -70,6 +74,9 @@ router.post("/vote/:pollId", async function (req, res) {
 
   const floodCheckId = _id + "_" + req.ip;
   const isValidVote = floodChecker.checkAndRegister(floodCheckId);
+
+  // uncomment this to disable this check
+  // const isValidVote = true
 
   //Forward user to poll results page if already voted
   if (!isValidVote) {
@@ -99,6 +106,9 @@ router.post("/vote/:pollId", async function (req, res) {
 
   // Push the update to the database
   database.update({ _id }, poll);
+
+  //Push update to all connected clients
+  global.broadcaster.updatePoll(poll);
 
   // Forward user to poll results page
   res.redirect("/poll/" + _id);
